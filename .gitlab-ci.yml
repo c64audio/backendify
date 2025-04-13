@@ -4,20 +4,18 @@ stages:
 - release
 - canary
 
-###################################################
-## uncomment this section to build your binary
-## if needed
-# build:
-#   stage: build
-#   image: # Add an image to build your service
-#   artifacts:
-#     paths:
-#       # pass my-app binary to the next stage
-#       # to include it in the Docker image
-#       - my-app
-#   script:
-#     - command to build my-app
-###################################################
+# Build the Go application
+build:
+  stage: build
+  image: golang:1.21.4
+  artifacts:
+    paths:
+      - backendify
+      - config.json
+  script:
+    - go mod download
+    - go test ./...
+    - go build -o backendify ./cmd
 
 ###################################################
 ## do not remove or edit this block, it is
