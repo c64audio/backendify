@@ -231,6 +231,7 @@ func (ep *Endpoint) FetchCompany(client utils.HTTPClient, id string) (models.Com
 			var v1 V1Response
 			err = json.Unmarshal(body, &v1)
 			if err != nil {
+				ep.Logger.Printf("Failed to unmarshal V1: %s", string(body))
 				return result, 500, err
 			}
 			result = v1.GetCompanyResponse()
@@ -238,10 +239,12 @@ func (ep *Endpoint) FetchCompany(client utils.HTTPClient, id string) (models.Com
 			var v2 V2Response
 			err = json.Unmarshal(body, &v2)
 			if err != nil {
+				ep.Logger.Printf("Failed to unmarshal V1: %s", string(body))
 				return result, 500, err
 			}
 			result = v2.GetCompanyResponse()
 		} else {
+			ep.Logger.Printf("Invalid content type for %s", string(body))
 			return result, 500, fmt.Errorf("invalid content type version %s", contentType)
 		}
 

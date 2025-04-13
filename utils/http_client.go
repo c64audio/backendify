@@ -3,6 +3,7 @@ package utils
 import (
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"time"
 )
@@ -29,10 +30,16 @@ type RealHTTPClient struct {
 func NewRealHTTPClient() *RealHTTPClient {
 	return &RealHTTPClient{
 		transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
+			MaxIdleConns:        500,
+			MaxIdleConnsPerHost: 100,
+			MaxConnsPerHost:     200,
 			IdleConnTimeout:     90 * time.Second,
 			DisableKeepAlives:   false,
+			DialContext: (&net.Dialer{
+				Timeout:   5 * time.Second,  // Connect timeout
+				KeepAlive: 30 * time.Second, // TCP keepalive interval
+			}).DialContext,
+			ResponseHeaderTimeout: 10 * time.Second, // Added timeout for receiving response headers
 		},
 	}
 }
