@@ -50,9 +50,9 @@ type ServerHealth struct {
 func (s *Server) GetHealth() ServerHealth {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	liveEndpoints := []string{}
-	inactiveEndpoints := []string{}
-	deadEndpoints := []string{}
+	var liveEndpoints []string
+	var inactiveEndpoints []string
+	var deadEndpoints []string
 
 	for cc, ep := range s.Endpoints {
 		switch ep.GetStatus() {
@@ -194,7 +194,6 @@ func New(c config.ServerConfiguration, l *log.Logger, client utils.HTTPClient) *
 
 func (s *Server) FetchCompany(id string, countryCode string) (models.CompanyResponse, int) {
 	// right: next job - get the Endpoints done in another part of the code, and then get a company from it, then process result
-	s.logger.Printf("DEBUG: Endpoints map contents: %v", s.Endpoints)
 	lowerCountryCode := strings.ToLower(countryCode)
 
 	ep, ok := s.Endpoints[lowerCountryCode]
@@ -272,7 +271,9 @@ func (s *Server) HealthHandler(w http.ResponseWriter) {
 		s.logger.Println("INFO: HealthCheck: Server is healthy")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(sh)
+		hsb, _ := json.Marshal(sh)
+		_, _ = w.Write(hsb)
+		s.logger.Printf("INFO: Health info: %v", string(hsb))
 	} else {
 		s.logger.Println("WARNING: HealthCheck: Server is overloaded or unhealthy")
 		w.WriteHeader(http.StatusTooManyRequests)

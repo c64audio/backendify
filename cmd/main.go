@@ -21,6 +21,9 @@ func main() {
 	// get configs and make available to context
 	ctx := context.Background()
 
+	// initiate logging
+	l := log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds|log.Lshortfile)
+
 	defer func() {
 		if r := recover(); r != nil {
 			// Get stack trace
@@ -29,7 +32,7 @@ func main() {
 			stackTrace := string(buf[:n])
 
 			// Log the panic with stack trace
-			log.Printf("FATAL: Application panic recovered: %v\nStack Trace:\n%s", r, stackTrace)
+			l.Printf("FATAL: Application panic recovered: %v\nStack Trace:\n%s", r, stackTrace)
 
 			// You could also write to a separate error log file here
 
@@ -41,21 +44,18 @@ func main() {
 	// get top level config.json file, unmarshal and put in context
 	data, err := os.ReadFile("config.json")
 	if err != nil {
-		log.Fatalf("Failed to read config file: %v", err)
+		l.Fatalf("Failed to read config file: %v", err)
 	}
 
 	var appConfig config.Config
 
 	if err := json.Unmarshal(data, &appConfig); err != nil {
-		log.Fatalf("Failed to unmarshal config: %v", err)
+		l.Fatalf("Failed to unmarshal config: %v", err)
 	}
 
 	type contextKey string
 	const configKey contextKey = "config"
 	ctx = context.WithValue(ctx, configKey, appConfig)
-
-	// initiate logging
-	l := log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds|log.Lshortfile)
 
 	httpClient := utils.NewRealHTTPClient()
 	srv := server.New(appConfig.ServerConfig, l, httpClient)

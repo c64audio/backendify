@@ -17,7 +17,7 @@ import (
 )
 
 // SupportedRetryIntervals Defines the retry intervals (in seconds) for Endpoints. This slice should be treated as immutable.
-var SupportedRetryIntervals = [5]int{10, 30, 90, 180, 720}
+var SupportedRetryIntervals = [5]int{1, 10, 30, 60, 90}
 
 type Status string
 
@@ -302,14 +302,16 @@ func New(httpClient utils.HTTPClient, l *log.Logger, endpointURL string, sla flo
 	// Either create a mock endpoint, or ping a real one
 	if spawnLocalhostMock && host == "localhost" {
 		endpoint.mockServer = mocks.New(endpoint.Port)
-	} else {
-		code, err := utils.PingHTTP(httpClient, endpointURL, time.Duration(sla)*time.Second)
-		if err != nil {
-			if code >= 300 && code <= 500 {
-				endpoint.Status = StatusDead // note: at this point there aren't multiple threads to worry about so could have set directly
-			} else if code >= 500 {
-				endpoint.Status = StatusInactive // note: at this point there aren't multiple threads to worry about so could have set directly
-			}
+		time.Sleep(10 * time.Second)
+	}
+	pingURL := endpoint.GetUrlForCompany("ping")
+	endpoint.Logger.Printf("INFO: Pinging endpoint for URL: %s", endpointURL)
+	code, err := utils.PingHTTP(httpClient, pingURL, time.Duration(sla)*time.Second)
+	endpoint.Logger.Printf("INFO: Ping result for URL: %s, code: %d", pingURL, code)
+	if err != nil {
+		// hacky, but 500 errors are really the only ones that would indicate server issues.
+		if code >= 500 {
+			endpoint.Status = StatusInactive // note: at this point there aren't multiple threads to worry about so could have set directly
 		}
 	}
 	return &endpoint, err
