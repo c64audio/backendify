@@ -1,7 +1,7 @@
 {
   "server": {
     "port": 9000,
-    "max_workers": 200,
+    "max_workers": 400,
     "sla": 0.90,
     "queue_timeout": 10
   },
