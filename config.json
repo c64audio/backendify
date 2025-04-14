@@ -2,12 +2,12 @@
   "server": {
     "port": 9000,
     "max_workers": 200,
-    "sla": 0.9,
+    "sla": 12,
     "queue_timeout": 10
   },
-  "endpoint_timeout": 2,
+  "endpoint_timeout": 10,
   "endpoint_path": "companies/%s",
-  "default_cache_size": 10000,
+  "default_cache_size": 20000,
   "spawn_localhost_mocks": false,
   "perform_endpoint_health_checks": false
 }
