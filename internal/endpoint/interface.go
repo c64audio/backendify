@@ -9,6 +9,7 @@ import (
 type IEndpoint interface {
 	FetchCompany(client utils.HTTPClient, id string) (models.CompanyResponse, int, error)
 	Close()
+	GetStatus() Status
 	// Add any other methods that the Endpoint should provide
 }
 

@@ -203,6 +203,7 @@ func (ep *Endpoint) FetchCompany(client utils.HTTPClient, id string) (models.Com
 	// Try getting from Cache first
 	cacheKey := id
 	if cachedValue, found := ep.Cache.Get(cacheKey); found {
+		ep.Logger.Printf("INFO: FetchCompany cache hit for id: %s, endpoint: %s", id, ep.Url)
 		return cachedValue.(models.CompanyResponse), 200, nil
 	}
 
@@ -211,40 +212,54 @@ func (ep *Endpoint) FetchCompany(client utils.HTTPClient, id string) (models.Com
 	// Cache miss, fetch from remote endpoint
 	switch ep.Status {
 	case StatusDead:
+		ep.Logger.Printf("WARN: Endpoint dead for id: %s, endpoint: %s", id, ep.Url)
 		return result, 404, fmt.Errorf("endpoint unavailable")
 	case StatusInactive:
+		ep.Logger.Printf("WARN: Endpoint inactive for id: %s, endpoint: %s", id, ep.Url)
 		if !ep.ShouldRetry() {
+			ep.Logger.Printf("WARN: Endpoitn still waiting for retry for id: %s, endpoint: %s", id, ep.Url)
 			return result, 404, fmt.Errorf("endpoint awaiting retry")
 		}
+		ep.Logger.Printf("INFO: Endpoint retry for id: %s, endpoint: %s", id, ep.Url)
 		fallthrough
 	case StatusActive:
 		targetUrl := ep.GetUrlForCompany(id)
+		ep.Logger.Printf("INFO: Endpoint sending to client id: %s, endpoint: %s", id, targetUrl)
 		// Process response and create result
 
 		code, contentType, body, err := utils.GetHTTP(client, targetUrl, ep.GetSLADuration())
+		if len(body) == 0 {
+			ep.Logger.Printf("ERROR: Endpoint received empty body for id: %s, endpoint: %s", id, targetUrl)
+		} else {
+			ep.Logger.Printf("INFO: Endpoint request returned status %d with content type %s for id: %s, endpoint: %s", code, contentType, id, targetUrl)
+			ep.Logger.Printf("DATA: %s for id: %s, endpoint: %s", body, id, targetUrl)
+		}
 		if err != nil {
+			ep.Logger.Printf("ERROR: %v for id: %s, endpoint: %s", err, id, targetUrl)
 			ep.ProcessError(code)
 			return result, code, err
 		}
 
 		if contentType == utils.V1ContentType {
+			ep.Logger.Printf("INFO: Processing V1 Content Type for id: %s, endpoint: %s", id, targetUrl)
 			var v1 V1Response
 			err = json.Unmarshal(body, &v1)
 			if err != nil {
-				ep.Logger.Printf("Failed to unmarshal V1: %s", string(body))
+				ep.Logger.Printf("Failed to unmarshal V1 for id: %s", id)
 				return result, 500, err
 			}
 			result = v1.GetCompanyResponse()
 		} else if contentType == utils.V2ContentType {
+			ep.Logger.Printf("INFO: Processing V2 Content Type for id: %s, endpoint: %s", id, targetUrl)
 			var v2 V2Response
 			err = json.Unmarshal(body, &v2)
 			if err != nil {
-				ep.Logger.Printf("Failed to unmarshal V1: %s", string(body))
+				ep.Logger.Printf("Failed to unmarshal V2 for id: %s", id)
 				return result, 500, err
 			}
 			result = v2.GetCompanyResponse()
 		} else {
-			ep.Logger.Printf("Invalid content type for %s", string(body))
+			ep.Logger.Printf("Invalid content type for %s", id)
 			return result, 500, fmt.Errorf("invalid content type version %s", contentType)
 		}
 

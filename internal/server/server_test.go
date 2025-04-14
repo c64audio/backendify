@@ -22,6 +22,11 @@ import (
 // MockEndpoint implements endpoint.IEndpoint for testing
 type MockEndpoint struct {
 	FetchCompanyFunc func(client utils.HTTPClient, id string) (models.CompanyResponse, int, error)
+	Status           endpoint.Status
+}
+
+func (m *MockEndpoint) GetStatus() endpoint.Status {
+	return m.Status
 }
 
 func (m *MockEndpoint) Close() {
@@ -112,7 +117,7 @@ func TestIsHealthy(t *testing.T) {
 	}
 
 	// Test healthy when endpoints are present.
-	server.Endpoints["US"] = &MockEndpoint{}
+	server.Endpoints["US"] = &MockEndpoint{Status: endpoint.StatusActive}
 
 	if !server.IsHealthy() {
 		t.Error("Expected the server to be healthy with endpoints and no jobs")
@@ -161,6 +166,7 @@ func TestHandleFetchCompany(t *testing.T) {
 						Active: true,
 					}, http.StatusOK, nil
 				},
+				Status: endpoint.StatusActive,
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody:   `"id":"COMP123","name":"Test Company V1","active":true`,
@@ -176,6 +182,7 @@ func TestHandleFetchCompany(t *testing.T) {
 						Active: false,
 					}, http.StatusOK, nil
 				},
+				Status: endpoint.StatusActive,
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody:   `"id":"COMP234","name":"Test Company V2","active":false`,
@@ -201,6 +208,7 @@ func TestHandleFetchCompany(t *testing.T) {
 				FetchCompanyFunc: func(client utils.HTTPClient, id string) (models.CompanyResponse, int, error) {
 					return models.CompanyResponse{}, http.StatusNotFound, nil
 				},
+				Status: endpoint.StatusActive,
 			},
 			expectedStatus: http.StatusNotFound,
 			expectedBody:   "",
@@ -212,6 +220,7 @@ func TestHandleFetchCompany(t *testing.T) {
 				FetchCompanyFunc: func(client utils.HTTPClient, id string) (models.CompanyResponse, int, error) {
 					return models.CompanyResponse{}, http.StatusInternalServerError, nil
 				},
+				Status: endpoint.StatusActive,
 			},
 			expectedStatus: http.StatusNotFound,
 			expectedBody:   "",
@@ -286,6 +295,7 @@ func TestJobQueue(t *testing.T) {
 				Active: true,
 			}, http.StatusOK, nil
 		},
+		Status: endpoint.StatusActive,
 	}
 
 	// Start the server (which starts the workers)
@@ -367,6 +377,7 @@ func TestHandleFetchCompanyTimeout(t *testing.T) {
 			t.Log("Mock endpoint for timeout test finished sleep (after timeout should occur)")
 			return models.CompanyResponse{}, http.StatusNotFound, nil
 		},
+		Status: endpoint.StatusActive,
 	}
 
 	// Set up the endpoint for both country codes

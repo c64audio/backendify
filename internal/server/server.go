@@ -40,6 +40,37 @@ type Server struct {
 	server  *http.Server // Store the HTTP server instance
 }
 
+type ServerHealth struct {
+	LiveEndpoints     string `json:"live_endpoints"`
+	InactiveEndpoints string `json:"inactive_endpoints"`
+	DeadEndpoints     string `json:"dead_endpoints"`
+	QueueLength       int    `json:"queue_length"`
+}
+
+func (s *Server) GetHealth() ServerHealth {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	liveEndpoints := []string{}
+	inactiveEndpoints := []string{}
+	deadEndpoints := []string{}
+
+	for cc, ep := range s.Endpoints {
+		switch ep.GetStatus() {
+		case endpoint.StatusActive:
+			liveEndpoints = append(liveEndpoints, cc)
+		case endpoint.StatusInactive:
+			inactiveEndpoints = append(inactiveEndpoints, cc)
+		case endpoint.StatusDead:
+			deadEndpoints = append(deadEndpoints, cc)
+		}
+	}
+	return ServerHealth{
+		LiveEndpoints:     strings.Join(liveEndpoints, ","),
+		InactiveEndpoints: strings.Join(inactiveEndpoints, ","),
+		DeadEndpoints:     strings.Join(deadEndpoints, ","),
+		QueueLength:       len(s.jobQueue),
+	}
+}
 func (s *Server) IsHealthy() bool {
 	if len(s.Endpoints) == 0 {
 		return false
@@ -236,14 +267,12 @@ func (s *Server) startWorkerPool() {
 }
 
 func (s *Server) HealthHandler(w http.ResponseWriter) {
+	sh := s.GetHealth()
 	if s.IsHealthy() {
 		s.logger.Println("INFO: HealthCheck: Server is healthy")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"status":  "healthy", // here we might want to list crapped out endpoints
-			"version": "1.0.0",   // You might want to use a version variable
-		})
+		_ = json.NewEncoder(w).Encode(sh)
 	} else {
 		s.logger.Println("WARNING: HealthCheck: Server is overloaded or unhealthy")
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -283,7 +312,7 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 	case s.jobQueue <- job:
 		// Job successfully queued
 		queueTime := time.Since(handlerStart)
-		s.logger.Printf("TIMING: Time to queue job: %v", queueTime)
+		s.logger.Printf("TIMING: Time to queue job %s: %v", id, queueTime)
 		s.logger.Printf("INFO: Job successfully queued for id: %s, country_iso: %s", id, countryCode)
 	case <-queueCtx.Done():
 		// Job queue full or queue timeout
@@ -296,7 +325,7 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 	select {
 	case res := <-responseCh:
 		processTime := time.Since(handlerStart)
-		s.logger.Printf("TIMING: Total processing time: %v", processTime)
+		s.logger.Printf("TIMING: Total processing time for id:%s: %v", id, processTime)
 
 		cancel()
 		if res.StatusCode != 200 {
@@ -316,11 +345,11 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 		// Log the reason for the timeout
 		switch ctx.Err() {
 		case context.DeadlineExceeded:
-			s.logger.Printf("DETAIL: Timeout was due to deadline exceeded (SLA: %.2f seconds)", timeout.Seconds())
+			s.logger.Printf("DETAIL: Timeout for id: %s was due to deadline exceeded (SLA: %.2f seconds)", id, timeout.Seconds())
 		case context.Canceled:
-			s.logger.Printf("DETAIL: Timeout was due to request being canceled")
+			s.logger.Printf("DETAIL: Timeout was due to id: %s being canceled", id)
 		default:
-			s.logger.Printf("DETAIL: Timeout occurred for unknown reason: %v", ctx.Err())
+			s.logger.Printf("DETAIL: Timeout on id: %s occurred for unknown reason: %v", id, ctx.Err())
 		}
 
 		// Check if the job is still in queue
@@ -337,7 +366,7 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 		// Log endpoint information
 		_, ok := s.Endpoints[countryCode]
 		if !ok {
-			s.logger.Printf("DETAIL: No endpoint configured for country code: %s", countryCode)
+			s.logger.Printf("DETAIL: No endpoint configured for id: %s for country code: %s", id, countryCode)
 		} else {
 			// If your endpoint has a method to get its status/health, log it here
 			s.logger.Printf("DETAIL: Endpoint for %s is configured", countryCode)
