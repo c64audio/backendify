@@ -309,6 +309,7 @@ func TestEndpoint_FetchCompany_V1Response(t *testing.T) {
 
 	// Verify the expected company response
 	expected := v1Response.GetCompanyResponse()
+	expected.ID = companyID
 	assert.Equal(t, expected, result)
 
 	// Verify the client was called correctly
@@ -351,6 +352,7 @@ func TestEndpoint_FetchCompany_V2Response_Active(t *testing.T) {
 
 	// Verify the expected company response
 	expected := v2Response.GetCompanyResponse()
+	expected.ID = companyID
 	assert.Equal(t, expected, result)
 
 	// Verify the client was called correctly
@@ -394,6 +396,7 @@ func TestEndpoint_FetchCompany_V2Response_Inactive(t *testing.T) {
 
 	// Verify the expected company response
 	expected := v2Response.GetCompanyResponse()
+	expected.ID = companyID
 	assert.Equal(t, expected, result)
 
 	// Verify the client was called correctly
