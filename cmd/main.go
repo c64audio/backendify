@@ -66,7 +66,7 @@ func main() {
 	ctx = context.WithValue(ctx, configKey, appConfig)
 
 	httpClient := utils.NewRealHTTPClient()
-	srv := server.New(appConfig.ServerConfig, l, httpClient)
+	srv := server.New(appConfig.ServerConfig, l, httpClient, statsClient)
 
 	// ingest command line entries
 	endpoints, err := endpoint.GetEndpoints(httpClient, l, appConfig)

@@ -95,7 +95,7 @@ func TestNew(t *testing.T) {
 		MaxWorkers: 5,
 	}
 
-	server := New(cfg, logger, nil)
+	server := New(cfg, logger, nil, nil)
 
 	if server.Port != cfg.Port {
 		t.Errorf("Expected Port to be %d, got %d", cfg.Port, server.Port)

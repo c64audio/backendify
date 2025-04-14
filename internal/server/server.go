@@ -294,12 +294,12 @@ func (s *Server) drainJobQueue(ctx context.Context) {
 	}
 }
 
-func New(c config.ServerConfiguration, l *log.Logger, client utils.HTTPClient) *Server {
+func New(c config.ServerConfiguration, l *log.Logger, client utils.HTTPClient, statsClient *utils.StatsClient) *Server {
 	port := c.Port
 	sla := c.SLA
 	queueTimeout := c.QueueTimeout
 	maxWorkers := c.MaxWorkers
-	srv := &Server{Port: port, SLA: sla, MaxWorkers: maxWorkers, logger: l, QueueTimeout: queueTimeout, Client: client, stopped: true, started: false}
+	srv := &Server{Port: port, SLA: sla, MaxWorkers: maxWorkers, logger: l, QueueTimeout: queueTimeout, Client: client, stopped: true, started: false, statsClient: statsClient}
 	srv.logger.Printf("INFO: Server created: port %d, SLA %f seconds, max workers %d", port, sla, maxWorkers)
 	return srv
 }
@@ -455,6 +455,7 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 	// performance improvement: if we can emergency serve cache hits from here, we greatly reduce the load
 	ok, cachedResponse := s.GetCachedResponse(id, countryCode)
 	if ok {
+		s.RegisterCacheHit()
 		s.logger.Printf("INFO: Serving super-cached response for id: %s, country_iso: %s", id, countryCode)
 		s.logger.Printf("INFO: Cached response: %s", cachedResponse)
 		w.Header().Set("Content-Type", "application/json")
@@ -462,7 +463,7 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(cachedResponse))
 		return
 	}
-
+	s.RegisterCacheMiss()
 	responseCh := make(chan models.Result, 1) // buffered channel to ensure that incomplete jobs don't block
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.SLA*float64(time.Second)))
 	defer cancel()
@@ -510,6 +511,7 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(res.Data)
 	case <-ctx.Done():
 		// Add more detailed timeout information
+		s.RegisterError()
 		timeout := time.Duration(s.SLA * float64(time.Second))
 		s.logger.Printf("ERROR: Request timed out after %.2f seconds for id: %s, country_iso: %s", timeout.Seconds(), id, countryCode)
 
