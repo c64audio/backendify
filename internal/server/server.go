@@ -35,11 +35,35 @@ type Server struct {
 	jobQueue     chan Job
 	Endpoints    map[string]endpoint.IEndpoint
 	QueueTimeout int
+	statsClient  *utils.StatsClient
 
 	mu      sync.RWMutex
 	stopped bool         // Flag to track if Stop has been called
 	started bool         // Flag to track if Start has been called
 	server  *http.Server // Store the HTTP server instance
+}
+
+func (s *Server) RegisterCacheHit() {
+	if s.statsClient != nil {
+		s.statsClient.IncrementMetric1()
+	}
+}
+func (s *Server) RegisterCacheMiss() {
+	if s.statsClient != nil {
+		s.statsClient.IncrementMetric2()
+	}
+}
+
+func (s *Server) RegisterAccess() {
+	if s.statsClient != nil {
+		s.statsClient.IncrementMetric3()
+	}
+}
+
+func (s *Server) RegisterError() {
+	if s.statsClient != nil {
+		s.statsClient.IncrementMetric4()
+	}
 }
 
 type ServerHealth struct {
@@ -283,7 +307,7 @@ func New(c config.ServerConfiguration, l *log.Logger, client utils.HTTPClient) *
 func (s *Server) FetchCompany(id string, countryCode string) (models.CompanyResponse, int) {
 	// right: next job - get the Endpoints done in another part of the code, and then get a company from it, then process result
 	lowerCountryCode := strings.ToLower(countryCode)
-
+	s.RegisterAccess()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ep, ok := s.Endpoints[lowerCountryCode]
@@ -296,10 +320,12 @@ func (s *Server) FetchCompany(id string, countryCode string) (models.CompanyResp
 	resp, status, err := ep.FetchCompany(s.Client, id)
 	//resp.ID = id // this should be done before it's returned now.
 	if err != nil {
+		s.RegisterError()
 		s.logger.Printf("ERROR: Endpoint returned error for %s: %v", countryCode, err)
 		return models.CompanyResponse{}, http.StatusNotFound
 	}
 	if status != http.StatusOK {
+		s.RegisterError()
 		s.logger.Printf("ERROR: Endpoint returned status %d for %s", status, countryCode)
 		return models.CompanyResponse{}, http.StatusNotFound
 	}
@@ -336,6 +362,7 @@ func (s *Server) worker(jobs <-chan Job) {
 
 		// If an error occurs, log it here:
 		if code != http.StatusOK {
+			s.RegisterError()
 			s.logger.Printf("ERROR: FetchCompany failed for CompanyID: %s, CountryCode: %s, Status: %d", job.CompanyID, job.CountryCode, code)
 		}
 

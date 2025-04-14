@@ -4,6 +4,7 @@ go 1.21.4
 
 require (
 	github.com/hashicorp/golang-lru v1.0.2
+	github.com/smira/go-statsd v1.3.4
 	github.com/stretchr/testify v1.10.0
 )
 

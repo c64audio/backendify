@@ -24,6 +24,13 @@ func main() {
 	// initiate logging
 	l := log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds|log.Lshortfile)
 
+	// Create a new StatsD client
+	statsClient, err := utils.NewStatsClient(l)
+	if err != nil {
+		l.Println("WARN: Failed to create stats client")
+	}
+	defer statsClient.Shutdown()
+
 	defer func() {
 		if r := recover(); r != nil {
 			stackTrace := make([]byte, 4096)
