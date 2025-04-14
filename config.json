@@ -8,5 +8,6 @@
   "endpoint_timeout": 5,
   "endpoint_path": "companies/%s",
   "default_cache_size": 1000,
-  "spawn_localhost_mocks": true
+  "spawn_localhost_mocks": true,
+  "perform_endpoint_health_checks": false
 }
