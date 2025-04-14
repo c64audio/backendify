@@ -32,15 +32,15 @@ func NewRealHTTPClient() *RealHTTPClient {
 	return &RealHTTPClient{
 		transport: &http.Transport{
 			MaxIdleConns:        500,
-			MaxIdleConnsPerHost: 100,
-			MaxConnsPerHost:     200,
-			IdleConnTimeout:     90 * time.Second,
+			MaxIdleConnsPerHost: 200,
+			MaxConnsPerHost:     300,
+			IdleConnTimeout:     30 * time.Second,
 			DisableKeepAlives:   false,
 			DialContext: (&net.Dialer{
-				Timeout:   1 * time.Second,  // Connect timeout: short, because we know that the endpoints are really near
-				KeepAlive: 30 * time.Second, // TCP keepalive interval
+				Timeout:   5 * time.Second,  // Connect timeout: short, because we know that the endpoints are really near
+				KeepAlive: 60 * time.Second, // TCP keepalive interval
 			}).DialContext,
-			ResponseHeaderTimeout: 10 * time.Second, // This will never be called, as the jittered client timeout will strike first.
+			ResponseHeaderTimeout: 60 * time.Second, // This will never be called, as the jittered client timeout will strike first.
 		},
 	}
 }
