@@ -119,25 +119,25 @@ func TestEndpoint_ProcessError(t *testing.T) {
 		{
 			name:            "Success status should not change anything",
 			statusCode:      200,
-			initialRetries:  1,
+			initialRetries:  0,
 			initialStatus:   StatusActive,
-			expectedRetries: 1,
+			expectedRetries: 0,
 			expectedStatus:  StatusActive,
 		},
 		{
 			name:            "Error status should increment retries",
 			statusCode:      500,
-			initialRetries:  1,
+			initialRetries:  0,
 			initialStatus:   StatusActive,
-			expectedRetries: 2,
-			expectedStatus:  StatusActive,
+			expectedRetries: 1,
+			expectedStatus:  StatusInactive,
 		},
 		{
 			name:            "Max retries should set status to dead",
 			statusCode:      500,
 			initialRetries:  5, // Length of SupportedRetryIntervals
-			initialStatus:   StatusActive,
-			expectedRetries: 5,
+			initialStatus:   StatusInactive,
+			expectedRetries: 0,
 			expectedStatus:  StatusDead,
 		},
 	}

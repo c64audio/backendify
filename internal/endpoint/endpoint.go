@@ -101,21 +101,24 @@ func (ep *Endpoint) GetUrlForCompany(id string) string {
 }
 
 func (ep *Endpoint) ProcessError(statusCode int) {
+	if statusCode < 500 {
+		return
+	}
+
 	if !utils.TryLock(&ep.mu, 100*time.Millisecond) {
 		// Log the failure to acquire lock but don't block
 		ep.Logger.Printf("WARNING: Could not acquire lock to process error")
 		return
 	}
 	defer ep.mu.Unlock()
-
-	if statusCode >= 200 && statusCode < 300 {
-		return
-	}
+	ep.LastRetry = time.Now()
 
 	if ep.RetryAttempts >= len(SupportedRetryIntervals) {
 		// maximum retry, kill it
 		ep.Status = StatusDead
+		ep.RetryAttempts = 0
 	} else {
+		ep.Status = StatusInactive
 		ep.RetryAttempts = ep.RetryAttempts + 1
 	}
 }
@@ -221,6 +224,7 @@ func (ep *Endpoint) FetchCompany(client utils.HTTPClient, id string) (models.Com
 			return result, 404, fmt.Errorf("endpoint awaiting retry")
 		}
 		ep.Logger.Printf("INFO: Endpoint retry for id: %s, endpoint: %s", id, ep.Url)
+		ep.Reactivate()
 		fallthrough
 	case StatusActive:
 		targetUrl := ep.GetUrlForCompany(id)
@@ -304,7 +308,7 @@ func New(httpClient utils.HTTPClient, l *log.Logger, endpointURL string, sla flo
 		endpoint.mockServer = mocks.New(endpoint.Port)
 		time.Sleep(10 * time.Second)
 	}
-	if !performEndpointHealthChecks {
+	if performEndpointHealthChecks {
 		pingURL := endpoint.GetUrlForCompany("ping")
 		endpoint.Logger.Printf("INFO: Pinging endpoint for URL: %s", endpointURL)
 		code, err := utils.PingHTTP(httpClient, pingURL, time.Duration(sla)*time.Second)
