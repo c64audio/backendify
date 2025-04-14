@@ -10,6 +10,7 @@ type IEndpoint interface {
 	FetchCompany(client utils.HTTPClient, id string) (models.CompanyResponse, int, error)
 	Close()
 	GetStatus() Status
+	GetCacheEntryAsJson(id string) (string, bool)
 	// Add any other methods that the Endpoint should provide
 }
 

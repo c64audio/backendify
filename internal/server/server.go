@@ -389,6 +389,20 @@ func (s *Server) HealthHandler(w http.ResponseWriter) {
 	}
 }
 
+func (s *Server) GetCachedResponse(id string, countryCode string) (bool, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ep, ok := s.Endpoints[strings.ToLower(countryCode)]
+	if !ok {
+		return false, ""
+	}
+	result, ok := ep.GetCacheEntryAsJson(id)
+	if !ok {
+		return false, ""
+	}
+	return true, result
+}
+
 func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 	handlerStart := time.Now()
 
@@ -401,6 +415,16 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
+
+	// performance improvement: if we can emergency serve cache hits from here, we greatly reduce the load
+	ok, cachedResponse := s.GetCachedResponse(id, countryCode)
+	if ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(cachedResponse))
+		return
+	}
+
 	responseCh := make(chan models.Result, 1) // buffered channel to ensure that incomplete jobs don't block
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.SLA*float64(time.Second)))
 	defer cancel()

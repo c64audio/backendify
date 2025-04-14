@@ -25,6 +25,10 @@ type MockEndpoint struct {
 	Status           endpoint.Status
 }
 
+func (m *MockEndpoint) GetCacheEntryAsJson(id string) (string, bool) {
+	return "", false
+}
+
 func (m *MockEndpoint) GetStatus() endpoint.Status {
 	return m.Status
 }

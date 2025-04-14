@@ -191,6 +191,22 @@ func (ep *Endpoint) ShouldRetry() bool {
 	}
 }
 
+func (ep *Endpoint) GetCacheEntryAsJson(id string) (string, bool) {
+	if ep.Cache == nil {
+		return "", false
+	}
+	cacheKey := id
+	if cachedValue, found := ep.Cache.Get(cacheKey); found {
+		cv := cachedValue.(models.CompanyResponse)
+		cvjson, err := json.Marshal(cv)
+		if err != nil {
+			return "", false
+		}
+		return string(cvjson), true
+	}
+	return "", false
+}
+
 // FetchCompany this is the main function
 func (ep *Endpoint) FetchCompany(client utils.HTTPClient, id string) (models.CompanyResponse, int, error) {
 	if ep.Logger != nil {
