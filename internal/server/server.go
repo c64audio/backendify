@@ -307,6 +307,12 @@ func (s *Server) FetchCompany(id string, countryCode string) (models.CompanyResp
 }
 
 func (s *Server) worker(jobs <-chan Job) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("RECOVERED from panic in worker: %v\n", r)
+		}
+	}()
+
 	for job := range jobs {
 		// Check for cancellation before starting work
 		if job.Ctx == nil {

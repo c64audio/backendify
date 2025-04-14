@@ -3,6 +3,7 @@ package utils
 import (
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"time"
@@ -36,23 +37,25 @@ func NewRealHTTPClient() *RealHTTPClient {
 			IdleConnTimeout:     90 * time.Second,
 			DisableKeepAlives:   false,
 			DialContext: (&net.Dialer{
-				Timeout:   5 * time.Second,  // Connect timeout
+				Timeout:   1 * time.Second,  // Connect timeout: short, because we know that the endpoints are really near
 				KeepAlive: 30 * time.Second, // TCP keepalive interval
 			}).DialContext,
-			ResponseHeaderTimeout: 10 * time.Second, // Added timeout for receiving response headers
+			ResponseHeaderTimeout: 10 * time.Second, // This will never be called, as the jittered client timeout will strike first.
 		},
 	}
 }
 
 // Get performs an HTTP GET request with the specified timeout
+// Note that all of these timeouts are below the SLA
 func (r *RealHTTPClient) Get(url string, timeout time.Duration) (*http.Response, error) {
 	// Create a client with the shared transport but a per-request timeout
 	// This avoids race conditions when multiple goroutines use the same client
+	// Jitter of 20% is added to avoid request floods when everything times out
+	jitter := time.Duration(float64(timeout) * (0.8 + 0.4*rand.Float64()))
 	client := &http.Client{
 		Transport: r.transport,
-		Timeout:   timeout,
+		Timeout:   jitter,
 	}
-
 	return client.Get(url)
 }
 

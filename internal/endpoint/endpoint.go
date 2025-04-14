@@ -270,9 +270,9 @@ func (ep *Endpoint) FetchCompany(client utils.HTTPClient, id string) (models.Com
 	return result, 200, nil
 }
 
-func New(httpClient utils.HTTPClient, l *log.Logger, endpointURL string, sla float64, endpointPathTemplate string, cacheSize int, spawnLocalhostMock bool, performEndpointHealthChecks bool) (IEndpoint, error) {
+func New(httpClient utils.HTTPClient, l *log.Logger, endpointURL string, endpointTimeout float64, endpointPathTemplate string, cacheSize int, spawnLocalhostMock bool, performEndpointHealthChecks bool) (IEndpoint, error) {
 	l.Printf("INFO: Creating new endpoint for URL: %s", endpointURL)
-	endpoint := Endpoint{Port: "80", Status: StatusActive, PathTemplate: endpointPathTemplate, SLA: sla, Logger: l}
+	endpoint := Endpoint{Port: "80", Status: StatusActive, PathTemplate: endpointPathTemplate, SLA: endpointTimeout, Logger: l}
 	endpoint.Cache, _ = lru.New(cacheSize) // Or appropriate size
 
 	// parsing the URL for well-formedness before actually pinging it
@@ -307,7 +307,7 @@ func New(httpClient utils.HTTPClient, l *log.Logger, endpointURL string, sla flo
 	if performEndpointHealthChecks {
 		pingURL := endpoint.GetUrlForCompany("ping")
 		endpoint.Logger.Printf("INFO: Pinging endpoint for URL: %s", endpointURL)
-		code, err := utils.PingHTTP(httpClient, pingURL, time.Duration(sla)*time.Second)
+		code, err := utils.PingHTTP(httpClient, pingURL, time.Duration(endpointTimeout)*time.Second)
 		endpoint.Logger.Printf("INFO: Ping result for URL: %s, code: %d", pingURL, code)
 		if err != nil {
 			// hacky, but 500 errors are really the only ones that would indicate server issues.
