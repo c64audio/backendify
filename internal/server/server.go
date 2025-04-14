@@ -403,7 +403,16 @@ func (s *Server) GetCachedResponse(id string, countryCode string) (bool, string)
 	return true, result
 }
 
+func (s *Server) IsStopped() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.stopped
+}
+
 func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
+	if s.IsStopped() {
+		return
+	}
 	handlerStart := time.Now()
 
 	id := r.URL.Query().Get("id")
@@ -419,6 +428,7 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 	// performance improvement: if we can emergency serve cache hits from here, we greatly reduce the load
 	ok, cachedResponse := s.GetCachedResponse(id, countryCode)
 	if ok {
+		s.logger.Printf("INFO: Serving super-cached response for id: %s, country_iso: %s", id, countryCode)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(cachedResponse))
