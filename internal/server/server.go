@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -75,34 +77,84 @@ func (s *Server) GetHealth() ServerHealth {
 func (s *Server) IsHealthy() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if len(s.Endpoints) == 0 {
+	if s.started && !s.stopped {
+		return true
+	}
+	return false
+
+	// Not sure if this logic is pissing off production
+	/*if len(s.Endpoints) == 0 {
 		return false
 	}
 	if len(s.jobQueue) >= cap(s.jobQueue) {
 		return false
 	}
-	return true
+	return true*/
 }
 
-// Start Starts the server in a thread-safe way
 func (s *Server) Start() error {
-	// Lock to prevent concurrent access
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check if already started
 	if s.started {
 		return errors.New("server already started")
 	}
 
-	// Check if already stopped
-	if s.stopped {
-		return errors.New("cannot start a stopped server")
+	// Log endpoint configuration
+	s.logEndpointConfiguration()
+
+	// Initialize job queue
+	if s.jobQueue == nil {
+		s.jobQueue = make(chan Job, s.MaxWorkers*10)
 	}
 
-	s.logger.Println("INFO: Server starting...")
+	// Start worker pool
+	s.startWorkerPool()
 
-	// Log all configured endpoints
+	// Prepare server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.recoveryMiddleware(s.handler))
+
+	s.server = &http.Server{
+		Addr:    fmt.Sprintf(":%d", s.Port),
+		Handler: mux,
+	}
+
+	serverReady := make(chan error, 1)
+	go func() {
+		listener, err := net.Listen("tcp", s.server.Addr)
+		if err != nil {
+			serverReady <- fmt.Errorf("failed to create listener: %v", err)
+			return
+		}
+		defer listener.Close()
+
+		s.logger.Printf("INFO: Listening on %s", s.server.Addr)
+		serverReady <- nil
+
+		// Block and serve
+		if serveErr := s.server.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
+			s.logger.Printf("ERROR: Server failed: %v", serveErr)
+		}
+	}()
+
+	// Wait for startup or failure
+	select {
+	case err := <-serverReady:
+		if err != nil {
+			s.logger.Printf("ERROR: Server startup failed: %v", err)
+			return err
+		}
+		s.started = true
+		s.stopped = false
+		s.logger.Printf("INFO: Server successfully started on port %d", s.Port)
+		return nil
+	case <-time.After(10 * time.Second):
+		return errors.New("server startup timed out")
+	}
+}
+
+func (s *Server) logEndpointConfiguration() {
 	s.logger.Println("INFO: Configured endpoints:")
 	if len(s.Endpoints) == 0 {
 		s.logger.Println("WARNING: No endpoints configured!")
@@ -111,78 +163,111 @@ func (s *Server) Start() error {
 			s.logger.Printf("INFO: Endpoint for country %s is configured", country)
 		}
 	}
-
-	// Initialize job queue if not already set
-	if s.jobQueue == nil {
-		s.jobQueue = make(chan Job, s.MaxWorkers*10) // Buffer size can be adjusted
-	}
-
-	// Start the worker pool
-	s.startWorkerPool()
-
-	// Create and start the HTTP server
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handler) // This will route all requests to your handler function
-
-	s.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", s.Port),
-		Handler: mux,
-	}
-
-	s.logger.Printf("INFO: HTTP server listening on port %d", s.Port)
-
-	// Mark as started
-	s.started = true
-
-	// Start server in a goroutine so it doesn't block
-	go func() {
-		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			s.logger.Fatalf("ERROR: Server failed to start: %v", err)
-		}
-	}()
-
-	return nil
 }
 
-// Stop Stops the server in a thread-safe way
-func (s *Server) Stop() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *Server) recoveryMiddleware(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				buf := make([]byte, 4096)
+				n := runtime.Stack(buf, false)
+				stackTrace := string(buf[:n])
 
-	if s.stopped {
-		s.logger.Println("INFO: Server already shut down")
-		return nil
+				s.logger.Printf(
+					"PANIC in HTTP handler: %v\n"+
+						"Request: %s %s\n"+
+						"Stack Trace:\n%s",
+					rec, r.Method, r.URL.Path, stackTrace,
+				)
+
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+		}()
+		handler(w, r)
 	}
+}
 
-	s.logger.Println("INFO: Server shutting down...")
+// Stop Stops the server in a thread-safe way - kind of!
+func (s *Server) Stop() error {
+	// Use a write lock with a context for more controlled shutdown
+	s.logger.Println("INFO: Stopping server")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	// Gracefully shutdown the HTTP server if it exists
-	if s.server != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	stopCh := make(chan struct{})
+	go func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		defer close(stopCh)
 
-		if err := s.server.Shutdown(ctx); err != nil {
-			s.logger.Printf("ERROR: Server shutdown error: %v", err)
-			// Continue with cleanup even if shutdown fails
+		if s.stopped {
+			return
+		}
+
+		// Drain job queue with timeout
+		s.drainJobQueue(ctx)
+
+		// Graceful server shutdown
+		if s.server != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 5*time.Second)
+			defer shutdownCancel()
+
+			if err := s.server.Shutdown(shutdownCtx); err != nil {
+				s.logger.Printf("Server shutdown error: %v", err)
+			}
+		}
+
+		s.logger.Println("INFO: Stopping worker pool")
+		// Close endpoints
+		for _, ep := range s.Endpoints {
+			ep.Close()
+		}
+
+		s.stopped = true
+		s.started = false
+	}()
+
+	// Wait for stop to complete or timeout
+	select {
+	case <-stopCh:
+		s.logger.Println("INFO: Server stopped")
+		return nil
+	case <-ctx.Done():
+		return errors.New("server stop timed out")
+	}
+}
+
+func (s *Server) drainJobQueue(ctx context.Context) {
+	s.logger.Println("INFO: Draining job queue")
+
+	// Count drained jobs for logging
+	drained := 0
+
+	for {
+		select {
+		case job, ok := <-s.jobQueue:
+			if !ok {
+				// Queue was closed
+				s.logger.Printf("INFO: Job queue drained successfully, processed %d jobs", drained)
+				return
+			}
+
+			// Send response with non-blocking operation
+			select {
+			case job.ResponseCh <- models.Result{StatusCode: http.StatusServiceUnavailable}:
+				// Successfully sent
+			default:
+				// Channel was full or closed - log but don't block
+				s.logger.Printf("WARNING: Could not send result for job - channel full or closed")
+			}
+
+			drained++
+
+		case <-ctx.Done():
+			s.logger.Printf("INFO: Job queue drain timed out after processing %d jobs", drained)
+			return
 		}
 	}
-
-	// Close job queue safely
-	if s.jobQueue != nil {
-		close(s.jobQueue)
-	}
-
-	// Close all endpoints
-	for _, epi := range s.Endpoints {
-		epi.Close()
-	}
-
-	// Mark as stopped
-	s.stopped = true
-	s.started = false
-
-	s.logger.Println("INFO: All workers stopped and endpoints closed.")
-	return nil
 }
 
 func New(c config.ServerConfiguration, l *log.Logger, client utils.HTTPClient) *Server {
@@ -190,7 +275,7 @@ func New(c config.ServerConfiguration, l *log.Logger, client utils.HTTPClient) *
 	sla := c.SLA
 	queueTimeout := c.QueueTimeout
 	maxWorkers := c.MaxWorkers
-	srv := &Server{Port: port, SLA: sla, MaxWorkers: maxWorkers, logger: l, QueueTimeout: queueTimeout, Client: client}
+	srv := &Server{Port: port, SLA: sla, MaxWorkers: maxWorkers, logger: l, QueueTimeout: queueTimeout, Client: client, stopped: true, started: false}
 	srv.logger.Printf("INFO: Server created: port %d, SLA %f seconds, max workers %d", port, sla, maxWorkers)
 	return srv
 }
@@ -199,7 +284,10 @@ func (s *Server) FetchCompany(id string, countryCode string) (models.CompanyResp
 	// right: next job - get the Endpoints done in another part of the code, and then get a company from it, then process result
 	lowerCountryCode := strings.ToLower(countryCode)
 
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	ep, ok := s.Endpoints[lowerCountryCode]
+
 	if !ok {
 		s.logger.Printf("ERROR: No endpoint configured for country code: %s", countryCode)
 		return models.CompanyResponse{}, http.StatusNotFound
@@ -259,13 +347,19 @@ func (s *Server) worker(jobs <-chan Job) {
 	}
 }
 
-// You should also make startWorkerPool thread-safe if needed
 func (s *Server) startWorkerPool() {
-
+	var wg sync.WaitGroup
 	for w := 1; w <= s.MaxWorkers; w++ {
-		s.logger.Printf("INFO: Starting worker %d", w)
-		go s.worker(s.jobQueue)
+		wg.Add(1)
+		go func(id int) {
+			s.logger.Printf("INFO: Worker %d initialized", id)
+			wg.Done()            // Signal that worker has been initialized
+			s.worker(s.jobQueue) // This will run indefinitely
+		}(w)
 	}
+	s.logger.Printf("INFO: Waiting for %d workers to initialize", s.MaxWorkers)
+	wg.Wait() // Wait for worker initialization only
+	s.logger.Printf("INFO: All %d workers successfully initialized", s.MaxWorkers)
 }
 
 func (s *Server) HealthHandler(w http.ResponseWriter) {

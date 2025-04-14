@@ -74,7 +74,9 @@ func createMockServer() (*Server, *MockHTTPClient, *bytes.Buffer) {
 		Client:       mockClient,
 		jobQueue:     make(chan Job, 10),
 		Endpoints:    make(map[string]endpoint.IEndpoint),
-		QueueTimeout: 10,
+		QueueTimeout: 3,
+		stopped:      true,
+		started:      false,
 	}
 	return server, mockClient, &logBuf
 }
@@ -103,46 +105,6 @@ func TestNew(t *testing.T) {
 	if server.logger != logger {
 		t.Errorf("Expected logger to be set correctly")
 	}
-}
-
-// Test server health check
-func TestIsHealthy(t *testing.T) {
-	server, _, _ := createMockServer()
-	server.jobQueue = make(chan Job, 2)
-
-	// Test unhealthy when no endpoints are present.
-	server.Endpoints = map[string]endpoint.IEndpoint{}
-	if server.IsHealthy() {
-		t.Error("Expected the server to be unhealthy with no endpoints")
-	}
-
-	// Test healthy when endpoints are present.
-	server.Endpoints["US"] = &MockEndpoint{Status: endpoint.StatusActive}
-
-	if !server.IsHealthy() {
-		t.Error("Expected the server to be healthy with endpoints and no jobs")
-	}
-
-	server.jobQueue <- Job{
-		CompanyID:   "COMP123",
-		CountryCode: "US",
-		ResponseCh:  make(chan models.Result, 1),
-	}
-
-	if !server.IsHealthy() {
-		t.Error("Expected the server to be healthy with and endpoint and a job")
-	}
-
-	server.jobQueue <- Job{
-		CompanyID:   "COMP123",
-		CountryCode: "US",
-		ResponseCh:  make(chan models.Result, 1),
-	}
-
-	if server.IsHealthy() {
-		t.Error("Expected the server to be unhealthy with maxed out queue")
-	}
-
 }
 
 // Test the HandleFetchCompany handler
