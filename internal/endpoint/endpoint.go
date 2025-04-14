@@ -37,7 +37,7 @@ type Endpoint struct {
 	SLA           float64
 	Cache         *lru.Cache
 	Logger        *log.Logger
-	mu            sync.Mutex
+	mu            sync.RWMutex
 	mockServer    *mocks.MockServer
 }
 
@@ -68,8 +68,8 @@ func (ep *Endpoint) SetRetries(num int) {
 }
 
 func (ep *Endpoint) GetRetries() int {
-	ep.mu.Lock()
-	defer ep.mu.Unlock()
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
 	return ep.RetryAttempts
 }
 
@@ -82,8 +82,8 @@ func (ep *Endpoint) SetStatus(status Status) {
 
 // GetStatus Thread-safe method to get status
 func (ep *Endpoint) GetStatus() Status {
-	ep.mu.Lock()
-	defer ep.mu.Unlock()
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
 	return ep.Status
 }
 
@@ -105,11 +105,7 @@ func (ep *Endpoint) ProcessError(statusCode int) {
 		return
 	}
 
-	if !utils.TryLock(&ep.mu, 100*time.Millisecond) {
-		// Log the failure to acquire lock but don't block
-		ep.Logger.Printf("WARNING: Could not acquire lock to process error")
-		return
-	}
+	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	ep.LastRetry = time.Now()
 
@@ -149,8 +145,8 @@ func (ep *Endpoint) ShouldRetry() bool {
 	// Try to acquire the lock in a separate goroutine
 	go func() {
 		// Attempt to acquire the lock
-		ep.mu.Lock()
-		defer ep.mu.Unlock()
+		ep.mu.RLock()
+		defer ep.mu.RUnlock()
 
 		// Default answer if we're active
 		if ep.Status == StatusActive {

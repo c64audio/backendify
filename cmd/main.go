@@ -26,18 +26,19 @@ func main() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			// Get stack trace
-			buf := make([]byte, 4096)
-			n := runtime.Stack(buf, false)
-			stackTrace := string(buf[:n])
+			stackTrace := make([]byte, 4096)
+			n := runtime.Stack(stackTrace, false)
 
-			// Log the panic with stack trace
-			l.Printf("FATAL: Application panic recovered: %v\nStack Trace:\n%s", r, stackTrace)
+			// Structured logging
+			l.Printf(
+				"FATAL PANIC: %v\n"+
+					"Stack Trace:\n%s\n"+
+					"Application cannot continue",
+				r, stackTrace[:n],
+			)
 
-			// You could also write to a separate error log file here
-
-			// Optional: Exit with error code
-			// os.Exit(1)
+			// Forceful termination
+			os.Exit(1)
 		}
 	}()
 

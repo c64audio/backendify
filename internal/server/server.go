@@ -34,7 +34,7 @@ type Server struct {
 	Endpoints    map[string]endpoint.IEndpoint
 	QueueTimeout int
 
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	stopped bool         // Flag to track if Stop has been called
 	started bool         // Flag to track if Start has been called
 	server  *http.Server // Store the HTTP server instance
@@ -71,7 +71,10 @@ func (s *Server) GetHealth() ServerHealth {
 		QueueLength:       len(s.jobQueue),
 	}
 }
+
 func (s *Server) IsHealthy() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if len(s.Endpoints) == 0 {
 		return false
 	}
@@ -266,6 +269,11 @@ func (s *Server) startWorkerPool() {
 }
 
 func (s *Server) HealthHandler(w http.ResponseWriter) {
+	if !s.started {
+		s.logger.Println("WARNING: HealthCheck: Server is not started")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
 	sh := s.GetHealth()
 	if s.IsHealthy() {
 		s.logger.Println("INFO: HealthCheck: Server is healthy")
