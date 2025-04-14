@@ -294,7 +294,7 @@ func (s *Server) FetchCompany(id string, countryCode string) (models.CompanyResp
 	}
 
 	resp, status, err := ep.FetchCompany(s.Client, id)
-	resp.ID = id
+	//resp.ID = id // this should be done before it's returned now.
 	if err != nil {
 		s.logger.Printf("ERROR: Endpoint returned error for %s: %v", countryCode, err)
 		return models.CompanyResponse{}, http.StatusNotFound
@@ -429,6 +429,7 @@ func (s *Server) FetchCompanyHandler(w http.ResponseWriter, r *http.Request) {
 	ok, cachedResponse := s.GetCachedResponse(id, countryCode)
 	if ok {
 		s.logger.Printf("INFO: Serving super-cached response for id: %s, country_iso: %s", id, countryCode)
+		s.logger.Printf("INFO: Cached response: %s", cachedResponse)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(cachedResponse))

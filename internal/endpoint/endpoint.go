@@ -278,7 +278,7 @@ func (ep *Endpoint) FetchCompany(client utils.HTTPClient, id string) (models.Com
 			ep.Logger.Printf("Invalid content type for %s", id)
 			return result, 500, fmt.Errorf("invalid content type version %s", contentType)
 		}
-
+		result.ID = id
 		ep.Cache.Add(cacheKey, result)
 	}
 
